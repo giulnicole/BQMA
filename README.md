@@ -113,9 +113,7 @@ null. We use a threshold of 0.5 as a default decision boundary.
 
 ``` r
 library(minfi)
-#> Warning: package 'minfi' was built under R version 4.3.1
 #> Loading required package: BiocGenerics
-#> Warning: package 'BiocGenerics' was built under R version 4.3.1
 #> 
 #> Attaching package: 'BiocGenerics'
 #> The following objects are masked from 'package:stats':
@@ -130,10 +128,8 @@ library(minfi)
 #>     Position, rank, rbind, Reduce, rownames, sapply, setdiff, sort,
 #>     table, tapply, union, unique, unsplit, which.max, which.min
 #> Loading required package: GenomicRanges
-#> Warning: package 'GenomicRanges' was built under R version 4.3.1
 #> Loading required package: stats4
 #> Loading required package: S4Vectors
-#> Warning: package 'S4Vectors' was built under R version 4.3.2
 #> 
 #> Attaching package: 'S4Vectors'
 #> The following object is masked from 'package:utils':
@@ -143,20 +139,15 @@ library(minfi)
 #> 
 #>     expand.grid, I, unname
 #> Loading required package: IRanges
-#> Warning: package 'IRanges' was built under R version 4.3.1
 #> 
 #> Attaching package: 'IRanges'
 #> The following object is masked from 'package:grDevices':
 #> 
 #>     windows
 #> Loading required package: GenomeInfoDb
-#> Warning: package 'GenomeInfoDb' was built under R version 4.3.3
 #> Loading required package: SummarizedExperiment
-#> Warning: package 'SummarizedExperiment' was built under R version 4.3.1
 #> Loading required package: MatrixGenerics
-#> Warning: package 'MatrixGenerics' was built under R version 4.3.1
 #> Loading required package: matrixStats
-#> Warning: package 'matrixStats' was built under R version 4.3.3
 #> 
 #> Attaching package: 'MatrixGenerics'
 #> The following objects are masked from 'package:matrixStats':
@@ -177,7 +168,6 @@ library(minfi)
 #>     rowWeightedMads, rowWeightedMeans, rowWeightedMedians,
 #>     rowWeightedSds, rowWeightedVars
 #> Loading required package: Biobase
-#> Warning: package 'Biobase' was built under R version 4.3.1
 #> Welcome to Bioconductor
 #> 
 #>     Vignettes contain introductory material; view with
@@ -192,21 +182,17 @@ library(minfi)
 #> 
 #>     anyMissing, rowMedians
 #> Loading required package: Biostrings
-#> Warning: package 'Biostrings' was built under R version 4.3.3
 #> Loading required package: XVector
-#> Warning: package 'XVector' was built under R version 4.3.1
 #> 
 #> Attaching package: 'Biostrings'
 #> The following object is masked from 'package:base':
 #> 
 #>     strsplit
 #> Loading required package: bumphunter
-#> Warning: package 'bumphunter' was built under R version 4.3.1
 #> Loading required package: foreach
 #> Loading required package: iterators
 #> Loading required package: parallel
 #> Loading required package: locfit
-#> Warning: package 'locfit' was built under R version 4.3.3
 #> locfit 1.5-9.12   2025-03-05
 #> Setting options('download.file.method.GEOquery'='auto')
 #> Setting options('GEOquery.inmemory.gpl'=FALSE)
