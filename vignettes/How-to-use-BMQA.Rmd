@@ -1,0 +1,269 @@
+---
+title: "Vignette for BMQA"
+author: "Giulia Nicole Baldrighi"
+date: "2026-04-16"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 7,
+  fig.height = 5
+)
+```
+
+## Overview
+
+BQMA (Bayesian Quantile Methylation Analysis) implements Bayesian sparse
+regression for Illumina methylation arrays. It provides posterior inclusion
+probabilities (PIP) for each CpG probe, quantile-specific effect profiles
+for continuous phenotypes, and a probit model for binary phenotypes.
+The spike-slab prior performs variable selection directly, returning a
+probability of association rather than a p-value.
+
+This vignette demonstrates the full workflow on simulated data that mimics
+a real methylation array experiment, then shows how to compare results
+with limma.
+
+## Installation
+
+```{r install, eval = FALSE}
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#  install.packages("BiocManager")
+#BiocManager::install("BQMA")
+```
+
+## Simulating methylation data
+
+We simulate a dataset with 200 samples and 100 CpG probes. Ten probes
+are truly associated with a binary phenotype (case/control). The remaining
+90 probes are null. This setup mimics a small methylation array experiment
+and allows us to evaluate method performance against known ground truth.
+
+```{r simulate}
+library(BQMA)
+
+set.seed(42)
+n <- 200
+p <- 100
+
+X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+colnames(X) <- paste0("cg", seq_len(p))
+
+# Ten truly associated probes with moderate effects
+beta_true            <- rep(0, p)
+beta_true[1:5]       <- c(0.8, -0.8, 0.6, -0.6, 0.7)
+beta_true[6:10]      <- c(-0.7, 0.5, -0.5, 0.6, -0.6)
+
+# Binary phenotype generated from a probit model
+eta <- X %*% beta_true
+y   <- rbinom(n, 1, pnorm(eta))
+
+cat("Cases    :", sum(y == 1), "\n")
+cat("Controls :", sum(y == 0), "\n")
+cat("Signal probes  :", sum(beta_true != 0), "\n")
+cat("Null probes    :", sum(beta_true == 0), "\n")
+```
+
+The correlation between the true signal probes and the phenotype confirms
+that the simulated signal is detectable but moderate, as expected in
+real EWAS data.
+
+```{r check_signal}
+cor_true  <- mean(abs(cor(X[, 1:10],  y)))
+cor_false <- mean(abs(cor(X[, 11:100], y)))
+
+cat("Mean correlation - signal probes:", round(cor_true,  3), "\n")
+cat("Mean correlation - null probes  :", round(cor_false, 3), "\n")
+```
+
+## Fitting BQMA for a binary phenotype
+
+The main function is `BQMA()`. For a binary phenotype coded as 0/1 we
+use `family = "binary"`, which fits a Bayesian probit model with a
+spike-slab prior using Albert and Chib (1993) data augmentation and
+the George and McCulloch (1993) marginal Bayes factor for variable
+selection.
+
+The `expected_incl` argument sets the prior probability that any given
+probe is associated with the phenotype. The default of 0.05 encodes
+the expectation that roughly 5 percent of tested probes are truly
+associated, which is a reasonable assumption for most EWAS.
+
+```{r fit_bqma, cache = TRUE}
+fit <- BQMA(
+  X             = X,
+  y             = y,
+  family        = "binary",
+  n_iter        = 3000L,
+  burnin        = 1000L,
+  expected_incl = 0.05,
+  verbose       = FALSE
+)
+
+show(fit)
+```
+
+## Extracting results
+
+The main output is the posterior inclusion probability (PIP) for each
+probe. A PIP close to 1 means the data strongly support inclusion of
+that probe in the model. A PIP close to 0 means the probe is likely null.
+We use a threshold of 0.5 as a default decision boundary.
+
+```{r extract}
+library(minfi)
+pip  <- getPIP(fit)[, 1]
+beta <- BQMA::getBeta(fit)[, 1]
+ci   <- getCI(fit)
+
+cat("Probes with PIP > 0.5:", sum(pip > 0.5), "\n")
+cat("Probes with PIP > 0.8:", sum(pip > 0.8), "\n")
+
+# Top 10 probes ordered by PIP
+top10 <- order(pip, decreasing = TRUE)[1:10]
+# estrai CI correttamente dall'array 3D
+ci_mat <- getCI(fit)[, 1, ]   # CpGs x 2 -- prendi il primo tau
+
+results <- data.frame(
+  probe   = names(pip)[top10],
+  pip     = round(pip[top10], 3),
+  beta    = round(beta[top10], 3),
+  ci_low  = round(ci_mat[top10, 1], 3),
+  ci_high = round(ci_mat[top10, 2], 3),
+  is_true = names(pip)[top10] %in% paste0("cg", 1:10)
+)
+
+print(results)
+
+```
+
+## PIP distribution
+
+A well-calibrated BQMA fit produces a bimodal PIP distribution: most
+probes cluster near zero (null probes) and a small number cluster near
+one (signal probes). This separation is the key advantage over frequentist
+p-values, which do not provide a direct probability of association.
+
+```{r pip_hist, fig.cap = "PIP distribution. Purple bars indicate probes with PIP above 0.5."}
+hist(pip,
+     breaks = 30,
+     col    = ifelse(
+       seq(min(pip), max(pip), length.out = 30) > 0.5,
+       "purple", "grey80"
+     ),
+     main = "Posterior inclusion probability distribution",
+     xlab = "PIP")
+abline(v = 0.5, lty = 2, col = "red", lwd = 2)
+```
+
+## Comparison with limma
+
+We compare BQMA against limma, the standard frequentist tool for
+differential methylation analysis. On simulated data with known ground
+truth we can directly measure how many of the 10 truly associated probes
+each method recovers in its top 10 results.
+
+```{r limma_comparison}
+if (!requireNamespace("limma", quietly = TRUE))
+  BiocManager::install("limma")
+library(limma)
+
+design    <- model.matrix(~ y)
+fit_limma <- lmFit(t(X), design)
+fit_limma <- eBayes(fit_limma)
+limma_res <- topTable(fit_limma, coef = 2,
+                       number = Inf, sort.by = "P")
+
+bqma_top10  <- names(pip)[order(pip, decreasing = TRUE)][1:10]
+limma_top10 <- rownames(limma_res)[1:10]
+
+cat("BQMA  - true probes in top 10:",
+    sum(bqma_top10  %in% paste0("cg", 1:10)), "/10\n")
+cat("limma - true probes in top 10:",
+    sum(limma_top10 %in% paste0("cg", 1:10)), "/10\n")
+cat("Overlap between methods      :",
+    length(intersect(bqma_top10, limma_top10)), "\n")
+
+comparison <- data.frame(
+  rank       = 1:10,
+  BQMA       = bqma_top10,
+  BQMA_true  = bqma_top10  %in% paste0("cg", 1:10),
+  limma      = limma_top10,
+  limma_true = limma_top10 %in% paste0("cg", 1:10),
+  in_common  = bqma_top10 %in% limma_top10
+)
+
+print(comparison)
+```
+
+## PIP versus limma p-value
+
+The scatter plot below illustrates the relationship between BQMA PIP
+and limma p-value. Probes with high PIP tend to have low p-values, but
+the two measures are not equivalent. BQMA can assign high PIP to probes
+that limma ranks poorly when their signal is consistent across the
+posterior but does not reach the limma significance threshold after
+multiple testing correction. These are the unique discoveries enabled
+by the Bayesian framework.
+
+```{r pip_vs_pvalue, fig.cap = "BQMA PIP versus limma p-value. Purple filled points are truly associated probes. The red dashed line marks PIP = 0.5. The blue dashed line marks nominal p = 0.05."}
+plot_df <- data.frame(
+  pip      = pip,
+  neg_logp = -log10(limma_res[names(pip), "P.Value"]),
+  is_true  = names(pip) %in% paste0("cg", 1:10)
+)
+
+plot(plot_df$neg_logp, plot_df$pip,
+     col  = ifelse(plot_df$is_true, "purple", "grey60"),
+     pch  = ifelse(plot_df$is_true, 19, 1),
+     xlab = "-log10(p-value limma)",
+     ylab = "PIP (BQMA)",
+     main = "BQMA PIP versus limma p-value",
+     ylim = c(0, 1))
+abline(h = 0.5, lty = 2, col = "red",  lwd = 2)
+abline(v = -log10(0.05), lty = 2, col = "blue", lwd = 2)
+legend("topleft",
+       legend = c("Signal probe", "Null probe",
+                  "PIP = 0.5", "p = 0.05"),
+       col    = c("purple", "grey60", "red", "blue"),
+       pch    = c(19, 1, NA, NA),
+       lty    = c(NA, NA, 2, 2),
+       bty    = "n")
+```
+
+## Interpreting the results
+
+The key outputs for downstream analysis are:
+
+- `pip` values above 0.5 indicate probable association. Use 0.8 for
+  a more stringent threshold analogous to genome-wide significance.
+- `beta` values give the direction and magnitude of the association
+  on the standardised M-value scale.
+- `ci` values give the 95 percent credible interval for each probe.
+  A credible interval that excludes zero is consistent with a
+  non-null effect but PIP is the primary evidence measure.
+
+```{r final_summary}
+sig_probes <- names(pip)[pip >= 0.5]
+
+cat("Significant probes (PIP >= 0.5):", length(sig_probes), "\n\n")
+
+ci_mat <- getCI(fit)[, 1, ]
+
+summary_df <- data.frame(
+  probe     = sig_probes,
+  pip       = round(pip[sig_probes], 3),
+  beta      = round(beta[sig_probes], 3),
+  ci_low    = round(ci_mat[sig_probes, 1], 3),
+  ci_high   = round(ci_mat[sig_probes, 2], 3),
+  direction = ifelse(beta[sig_probes] > 0,
+                     "hypermethylated", "hypomethylated")
+)
+
+summary_df <- summary_df[order(summary_df$pip, decreasing = TRUE), ]
+print(summary_df)
+```
+
