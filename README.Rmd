@@ -91,7 +91,7 @@ show(fit)
 
 The main output is the posterior inclusion probability (PIP) for each probe. A PIP close to 1 means the data strongly support inclusion of that probe in the model. A PIP close to 0 means the probe is likely null. We use a threshold of 0.5 as a default decision boundary.
 
-```{r extract, warning=F}
+```{r extract, warning=F, message=FALSE}
 library(minfi)
 pip  <- getPIP(fit)[, 1]
 beta <- BQMA::getBeta(fit)[, 1]
