@@ -18,108 +18,6 @@ Chen / McCartney probe lists.
 # BiocManager::install("BQMA")
 ```
 
-``` r
-library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
-#> Loading required package: minfi
-#> Warning: package 'minfi' was built under R version 4.3.1
-#> Loading required package: BiocGenerics
-#> Warning: package 'BiocGenerics' was built under R version 4.3.1
-#> 
-#> Attaching package: 'BiocGenerics'
-#> The following objects are masked from 'package:stats':
-#> 
-#>     IQR, mad, sd, var, xtabs
-#> The following objects are masked from 'package:base':
-#> 
-#>     anyDuplicated, aperm, append, as.data.frame, basename, cbind,
-#>     colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find,
-#>     get, grep, grepl, intersect, is.unsorted, lapply, Map, mapply,
-#>     match, mget, order, paste, pmax, pmax.int, pmin, pmin.int,
-#>     Position, rank, rbind, Reduce, rownames, sapply, setdiff, sort,
-#>     table, tapply, union, unique, unsplit, which.max, which.min
-#> Loading required package: GenomicRanges
-#> Warning: package 'GenomicRanges' was built under R version 4.3.1
-#> Loading required package: stats4
-#> Loading required package: S4Vectors
-#> Warning: package 'S4Vectors' was built under R version 4.3.2
-#> 
-#> Attaching package: 'S4Vectors'
-#> The following object is masked from 'package:utils':
-#> 
-#>     findMatches
-#> The following objects are masked from 'package:base':
-#> 
-#>     expand.grid, I, unname
-#> Loading required package: IRanges
-#> Warning: package 'IRanges' was built under R version 4.3.1
-#> 
-#> Attaching package: 'IRanges'
-#> The following object is masked from 'package:grDevices':
-#> 
-#>     windows
-#> Loading required package: GenomeInfoDb
-#> Warning: package 'GenomeInfoDb' was built under R version 4.3.3
-#> Loading required package: SummarizedExperiment
-#> Warning: package 'SummarizedExperiment' was built under R version 4.3.1
-#> Loading required package: MatrixGenerics
-#> Warning: package 'MatrixGenerics' was built under R version 4.3.1
-#> Loading required package: matrixStats
-#> Warning: package 'matrixStats' was built under R version 4.3.3
-#> 
-#> Attaching package: 'MatrixGenerics'
-#> The following objects are masked from 'package:matrixStats':
-#> 
-#>     colAlls, colAnyNAs, colAnys, colAvgsPerRowSet, colCollapse,
-#>     colCounts, colCummaxs, colCummins, colCumprods, colCumsums,
-#>     colDiffs, colIQRDiffs, colIQRs, colLogSumExps, colMadDiffs,
-#>     colMads, colMaxs, colMeans2, colMedians, colMins, colOrderStats,
-#>     colProds, colQuantiles, colRanges, colRanks, colSdDiffs, colSds,
-#>     colSums2, colTabulates, colVarDiffs, colVars, colWeightedMads,
-#>     colWeightedMeans, colWeightedMedians, colWeightedSds,
-#>     colWeightedVars, rowAlls, rowAnyNAs, rowAnys, rowAvgsPerColSet,
-#>     rowCollapse, rowCounts, rowCummaxs, rowCummins, rowCumprods,
-#>     rowCumsums, rowDiffs, rowIQRDiffs, rowIQRs, rowLogSumExps,
-#>     rowMadDiffs, rowMads, rowMaxs, rowMeans2, rowMedians, rowMins,
-#>     rowOrderStats, rowProds, rowQuantiles, rowRanges, rowRanks,
-#>     rowSdDiffs, rowSds, rowSums2, rowTabulates, rowVarDiffs, rowVars,
-#>     rowWeightedMads, rowWeightedMeans, rowWeightedMedians,
-#>     rowWeightedSds, rowWeightedVars
-#> Loading required package: Biobase
-#> Warning: package 'Biobase' was built under R version 4.3.1
-#> Welcome to Bioconductor
-#> 
-#>     Vignettes contain introductory material; view with
-#>     'browseVignettes()'. To cite Bioconductor, see
-#>     'citation("Biobase")', and for packages 'citation("pkgname")'.
-#> 
-#> Attaching package: 'Biobase'
-#> The following object is masked from 'package:MatrixGenerics':
-#> 
-#>     rowMedians
-#> The following objects are masked from 'package:matrixStats':
-#> 
-#>     anyMissing, rowMedians
-#> Loading required package: Biostrings
-#> Warning: package 'Biostrings' was built under R version 4.3.3
-#> Loading required package: XVector
-#> Warning: package 'XVector' was built under R version 4.3.1
-#> 
-#> Attaching package: 'Biostrings'
-#> The following object is masked from 'package:base':
-#> 
-#>     strsplit
-#> Loading required package: bumphunter
-#> Warning: package 'bumphunter' was built under R version 4.3.1
-#> Loading required package: foreach
-#> Loading required package: iterators
-#> Loading required package: parallel
-#> Loading required package: locfit
-#> Warning: package 'locfit' was built under R version 4.3.3
-#> locfit 1.5-9.12   2025-03-05
-#> Setting options('download.file.method.GEOquery'='auto')
-#> Setting options('GEOquery.inmemory.gpl'=FALSE)
-```
-
 ## Quick start
 
 A minimal end-to-end example: simulate a binary EWAS, fit BQMA, extract
@@ -127,6 +25,7 @@ PIPs, then annotate the result.
 
 ``` r
 library(BQMA)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
 
 set.seed(42)
 n <- 200
