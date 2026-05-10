@@ -30,13 +30,16 @@ Illumina manifest and the Chen / McCartney probe lists.
 # BiocManager::install("BQMA")
 ```
 
+
 ## Quick start
+
 
 A minimal end-to-end example: simulate a binary EWAS, fit BQMA, extract
 PIPs, then annotate the result.
 
 ```{r quickstart, message = FALSE, warning = FALSE}
 library(BQMA)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
 
 set.seed(42)
 n <- 200
@@ -96,6 +99,7 @@ for the annotation lookup to return non-NA flags.
 ```{r}
 ann_df <- annotate_results(fit, array = "450k")
 table(ann_df$probe_class)
+
 
 # Filter to reliable hits
 reliable <- ann_df[ann_df$pip >= 0.5 &
