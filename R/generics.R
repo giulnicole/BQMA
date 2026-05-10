@@ -43,37 +43,40 @@ setMethod("getPIP", "BQMAResult", function(x, tau = NULL,
   pip
 })
 
+
 #' Extract posterior mean beta coefficients
 #'
-#' @param x       A \code{BQMAResult} object.
-#' @param tau     Numeric. A single quantile value. NULL returns all.
-#' @param filter  Character vector of \code{probe_class} values to keep.
+#' Method for \code{BQMAResult} of the \code{getBeta} generic imported
+#' from \pkg{minfi}.
+#'
+#' @param object A \code{BQMAResult} object.
+#' @param tau    Numeric. A single quantile value. NULL returns all.
+#' @param filter Character vector of \code{probe_class} values to keep.
 #'   NULL returns all probes.
 #' @return A matrix of posterior means (CpGs x tau).
-#' @export
-setGeneric("getBeta",
-           function(x, tau = NULL, filter = NULL)
-             standardGeneric("getBeta")
-)
+#' @importFrom minfi getBeta
+#' @name getBeta
+NULL
 
-#' @describeIn getBeta Method for BQMAResult
-#' @export
-setMethod("getBeta", "BQMAResult", function(x, tau = NULL, filter = NULL) {
+#' @rdname getBeta
+#' @exportMethod getBeta
+setMethod("getBeta", "BQMAResult", function(object, tau = NULL, filter = NULL) {
   beta <- if (is.null(tau)) {
-    x@beta_mean
+    object@beta_mean
   } else {
-    idx <- which(abs(x@tau - tau) < 1e-6)
+    idx <- which(abs(object@tau - tau) < 1e-6)
     if (length(idx) == 0) stop("tau value not found in fitted model.")
-    x@beta_mean[, idx, drop = FALSE]
+    object@beta_mean[, idx, drop = FALSE]
   }
 
-  if (!is.null(filter) && length(x@probe_class) > 0) {
-    keep <- names(x@probe_class)[x@probe_class %in% filter]
+  if (!is.null(filter) && length(object@probe_class) > 0) {
+    keep <- names(object@probe_class)[object@probe_class %in% filter]
     beta <- beta[rownames(beta) %in% keep, , drop = FALSE]
   }
 
   beta
 })
+
 
 #' Extract posterior credible intervals
 #'

@@ -3,6 +3,7 @@
 \docType{class}
 \name{BQMAResult-class}
 \alias{BQMAResult-class}
+\alias{BQMAResult}
 \title{BQMAResult S4 class}
 \description{
 Stores the output of a BQMA model fit.

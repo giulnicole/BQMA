@@ -2,56 +2,63 @@
 % Please edit documentation in R/annotate_results.R
 \name{annotate_results}
 \alias{annotate_results}
-\alias{annotate_results,BQMAResult-method}
-\title{Annotate probes in a BQMAResult object}
+\title{Annotate probes from a BQMA fit with QC flags and genomic context}
 \usage{
-annotate_results(
-  object,
-  array = c("450k", "EPIC"),
-  sex_chr = TRUE,
-  crossreactive = TRUE,
-  snp_dist = 2L,
-  ...
-)
-
-\S4method{annotate_results}{BQMAResult}(
-  object,
-  array = c("450k", "EPIC"),
-  sex_chr = TRUE,
-  crossreactive = TRUE,
-  snp_dist = 2L,
-  ...
-)
+annotate_results(object, array = c("450k", "EPIC"), snp_dist_problematic = 2L)
 }
 \arguments{
-\item{object}{A \code{BQMAResult} object.}
+\item{object}{A \linkS4class{BQMAResult} object.}
 
 \item{array}{Array type: \code{"450k"} or \code{"EPIC"}.}
 
-\item{sex_chr}{Logical. Flag probes on chrX/chrY as PROBLEMATIC.}
-
-\item{crossreactive}{Logical. Flag cross-reactive probes as FLAGGED.}
-
-\item{snp_dist}{Integer. Flag probes with a SNP within this many bp of
-the CpG site as FLAGGED. Set to \code{NULL} to skip SNP filtering.}
-
-\item{...}{Currently unused.}
+\item{snp_dist_problematic}{Integer. SNPs at distance <= this (in bp)
+from the CpG site mark the probe as \code{PROBLEMATIC}. Default 2.}
 }
 \value{
-The input \code{BQMAResult} object with \code{probe_class} slot
-populated.
+A \code{data.frame} with columns:
+\code{probe}, \code{tau}, \code{pip}, \code{beta_mean}, \code{ci_low}, \code{ci_high},
+\code{probe_class}, \code{snp_dist_bp}, \code{cr_flag}, \code{xy_flag},
+\code{gene}, \code{feature}, \code{chr}, \code{pos}.
 }
 \description{
-Classifies each probe into one of three categories:
-\itemize{
-\item \code{CLEAN_CpG}   — no known issues
-\item \code{FLAGGED}     — cross-reactive or SNP within \code{snp_dist} bp
-\item \code{PROBLEMATIC} — located on sex chromosomes (chrX/chrY)
+Takes a \linkS4class{BQMAResult} object and returns a tidy \code{data.frame} with
+one row per probe per quantile, containing posterior summaries
+together with reliability annotation drawn from the Illumina manifest,
+the Chen / McCartney cross-reactive probe lists (via DMRcatedata),
+and chromosome location.
 }
-Classification is hierarchical: \code{PROBLEMATIC} overrides \code{FLAGGED}.
+\details{
+Each probe is classified as:
+\describe{
+\item{\code{CLEAN_CpG}}{interpretable as epigenetic signal}
+\item{\code{FLAGGED_snp_body}}{SNP in the probe body, distance > 2 bp from
+the CpG / SBE site}
+\item{\code{PROBLEMATIC}}{SNP at or adjacent to the CpG (distance 0-2 bp),
+cross-reactive probe, or probe on chrX / chrY}
 }
-\section{Methods (by class)}{
-\itemize{
-\item \code{annotate_results(BQMAResult)}: Method for BQMAResult
+The classification is hierarchical: any \code{PROBLEMATIC} condition
+overrides \code{FLAGGED_snp_body}. The individual underlying flags
+(\code{snp_dist_bp}, \code{cr_flag}, \code{xy_flag}) are also returned so the user can
+apply a different rule downstream.
 
-}}
+Output is in long format: one row per (probe x tau). For the typical
+median-only case (\code{tau = 0.5} or \code{family = "binary"}) this is one row
+per probe; for multi-quantile fits each probe appears once per
+quantile.
+
+To attach the classification back onto the \linkS4class{BQMAResult} object
+(for use by \code{show()} and downstream methods), use \code{\link[=add_annotation]{add_annotation()}}.
+}
+\references{
+Chen YA et al. (2013) Discovery of cross-reactive probes and
+polymorphic CpGs in the Illumina Infinium HumanMethylation450
+microarray. Epigenetics 8(2): 203-209.
+
+McCartney DL et al. (2016) Identification of polymorphic and
+off-target probe binding sites on the Illumina Infinium
+MethylationEPIC BeadChip. Genomics Data 9: 22-24.
+}
+\seealso{
+\code{\link[=add_annotation]{add_annotation()}} to write the classification onto the
+\code{BQMAResult} slot.
+}

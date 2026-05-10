@@ -1,0 +1,403 @@
+---
+title: "Vignette for BQMA"
+author: "Giulia Nicole Baldrighi"
+date: "2026-04-16"
+output: html_document
+vignette: >
+  %\VignetteIndexEntry{Vignette for BQMA}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 7,
+  fig.height = 5
+)
+```
+
+## Overview
+
+BQMA (Bayesian Quantile Methylation Analysis) implements Bayesian sparse
+regression for Illumina methylation arrays. It provides posterior
+inclusion probabilities (PIP) for each CpG probe, quantile-specific
+effect profiles for continuous phenotypes, and a probit model for binary
+phenotypes. The spike-slab prior performs variable selection directly,
+returning a probability of association rather than a p-value.
+
+This vignette demonstrates the full workflow using **real Illumina 450k
+probe identifiers** drawn from the `minfiData` example dataset, with a
+controlled simulated design matrix and phenotype on top of those
+identifiers. Real probe IDs are needed so that the annotation step
+(SNP flags, cross-reactive filtering, chromosome lookup) actually
+returns information; the simulation on `X` and `y` provides a known
+ground truth so that BQMA's recovery rate can be measured against a
+benchmark.
+
+## Installation
+
+```{r install, eval = FALSE}
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install("BQMA")
+```
+
+## Loading real probe identifiers
+
+We load the `MsetEx` dataset from `minfiData` — a 6-sample 450k example
+shipped with Bioconductor — purely to obtain a realistic set of probe
+IDs and to subset to the most variable probes. The actual model fit
+will use a simulated design matrix on top of these identifiers; we are
+*not* analysing the `MsetEx` samples themselves, since 6 samples are
+too few for a meaningful EWAS.
+
+```{r load_probes, message = FALSE}
+library(BQMA)
+library(minfi)
+library(minfiData)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+# Compute per-probe variance across the 6 MsetEx samples and pick the
+# top 200 most variable probes. These are real cgXXXXXXXX IDs from the
+# 450k manifest, including the realistic mix of clean / SNP-affected /
+# cross-reactive / sex-chromosome probes that any real EWAS encounters.
+M_full   <- minfi::getM(MsetEx)
+probe_var <- matrixStats::rowVars(M_full, useNames = TRUE)
+top_probes <- names(sort(probe_var, decreasing = TRUE))[seq_len(200)]
+
+# Drop probes with NA variance (rare, e.g. all-zero rows)
+top_probes <- top_probes[!is.na(top_probes)]
+length(top_probes)
+head(top_probes)
+```
+
+## Simulating phenotype and signal on real probes
+
+We simulate a dataset of 200 samples on the 200 selected real probes.
+Ten probes (chosen at random from the pool) are truly associated with a
+binary phenotype; the remaining 190 are null. The phenotype is
+generated from a probit model.
+
+This gives us:
+
+- a controlled ground truth (we know which probes are signal),
+- real probe identifiers (so `annotate_results()` returns real flags),
+- enough samples for the Bayesian model to converge (n = 200, p = 200).
+
+```{r simulate}
+set.seed(42)
+n <- 200
+p <- length(top_probes)
+
+X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+colnames(X) <- top_probes
+
+# Pick 10 random probes as the true signal
+true_idx    <- sample(seq_len(p), 10)
+true_probes <- colnames(X)[true_idx]
+
+beta_true <- rep(0, p)
+beta_true[true_idx] <- c( 0.8, -0.8,  0.6, -0.6,  0.7,
+                         -0.7,  0.5, -0.5,  0.6, -0.6)
+
+# Binary phenotype generated from a probit model.
+eta <- X %*% beta_true
+y   <- rbinom(n, 1, pnorm(eta))
+
+cat("Cases    :", sum(y == 1), "\n")
+cat("Controls :", sum(y == 0), "\n")
+cat("Signal probes :", length(true_probes), "\n")
+cat("Null probes   :", p - length(true_probes), "\n")
+```
+
+The correlation between true signal probes and the phenotype confirms
+that the simulated signal is detectable but moderate, as expected in
+real EWAS data.
+
+```{r check_signal}
+null_idx <- setdiff(seq_len(p), true_idx)
+cor_true  <- mean(abs(cor(X[, true_idx], y)))
+cor_false <- mean(abs(cor(X[, null_idx], y)))
+
+cat("Mean correlation - signal probes:", round(cor_true,  3), "\n")
+cat("Mean correlation - null probes  :", round(cor_false, 3), "\n")
+```
+
+## Fitting BQMA for a binary phenotype
+
+The main function is `BQMA()`. For a binary phenotype coded as 0/1 we
+use `family = "binary"`, which fits a Bayesian probit model with a
+spike-slab prior using Albert and Chib (1993) data augmentation and the
+George and McCulloch (1993) marginal Bayes factor for variable
+selection.
+
+The `expected_incl` argument sets the prior probability that any given
+probe is associated with the phenotype. The default of 0.05 encodes the
+expectation that roughly 5 % of tested probes are truly associated,
+which is a reasonable assumption for most EWAS.
+
+```{r fit_bqma, cache = TRUE}
+fit <- BQMA(
+  X             = X,
+  y             = y,
+  family        = "binary",
+  n_iter        = 3000L,
+  burnin        = 1000L,
+  expected_incl = 0.05,
+  verbose       = FALSE
+)
+
+show(fit)
+```
+
+## Extracting results
+
+The main output is the posterior inclusion probability (PIP) for each
+probe. A PIP close to 1 means the data strongly support inclusion of
+that probe; a PIP close to 0 means the probe is likely null. We use
+0.5 as a default decision threshold.
+
+```{r extract}
+pip  <- getPIP(fit)[, 1]
+beta <- getBeta(fit)[, 1]
+ci   <- getCI(fit)[, 1, ]   # CpGs x 2, first tau
+
+cat("Probes with PIP > 0.5:", sum(pip > 0.5), "\n")
+cat("Probes with PIP > 0.8:", sum(pip > 0.8), "\n")
+
+# Top 10 probes ordered by PIP
+top10 <- order(pip, decreasing = TRUE)[1:10]
+
+results <- data.frame(
+  probe   = names(pip)[top10],
+  pip     = round(pip[top10],   3),
+  beta    = round(beta[top10],  3),
+  ci_low  = round(ci[top10, 1], 3),
+  ci_high = round(ci[top10, 2], 3),
+  is_true = names(pip)[top10] %in% true_probes
+)
+print(results)
+```
+
+## PIP distribution
+
+A well-calibrated BQMA fit produces a bimodal PIP distribution: most
+probes cluster near zero (null) and a small number cluster near one
+(signal). This separation is the key advantage over frequentist
+p-values, which do not provide a direct probability of association.
+
+```{r pip_hist, fig.cap = "PIP distribution. Purple bars indicate probes with PIP above 0.5."}
+hist(pip,
+     breaks = 30,
+     col    = ifelse(
+       seq(min(pip), max(pip), length.out = 30) > 0.5,
+       "purple", "grey80"
+     ),
+     main = "Posterior inclusion probability distribution",
+     xlab = "PIP")
+abline(v = 0.5, lty = 2, col = "red", lwd = 2)
+```
+
+## Comparison with limma
+
+We compare BQMA against limma, the standard frequentist tool for
+differential methylation analysis. With known ground truth we can
+measure how many of the 10 truly associated probes each method recovers
+in its top 10 results.
+
+```{r limma_comparison, message = FALSE}
+if (!requireNamespace("limma", quietly = TRUE))
+  stop("Install 'limma' to run this comparison: BiocManager::install('limma')")
+library(limma)
+
+design    <- model.matrix(~ y)
+fit_limma <- lmFit(t(X), design)
+fit_limma <- eBayes(fit_limma)
+limma_res <- topTable(fit_limma, coef = 2,
+                      number = Inf, sort.by = "P")
+
+bqma_top10  <- names(pip)[order(pip, decreasing = TRUE)][1:10]
+limma_top10 <- rownames(limma_res)[1:10]
+
+cat("BQMA  - true probes in top 10:",
+    sum(bqma_top10  %in% true_probes), "/10\n")
+cat("limma - true probes in top 10:",
+    sum(limma_top10 %in% true_probes), "/10\n")
+cat("Overlap between methods      :",
+    length(intersect(bqma_top10, limma_top10)), "\n")
+
+comparison <- data.frame(
+  rank       = seq_len(10),
+  BQMA       = bqma_top10,
+  BQMA_true  = bqma_top10  %in% true_probes,
+  limma      = limma_top10,
+  limma_true = limma_top10 %in% true_probes,
+  in_common  = bqma_top10 %in% limma_top10
+)
+print(comparison)
+```
+
+## PIP versus limma p-value
+
+The scatter plot below illustrates the relationship between BQMA PIP
+and limma p-value. Probes with high PIP tend to have low p-values, but
+the two measures are not equivalent. BQMA can assign high PIP to probes
+that limma ranks poorly when their signal is consistent across the
+posterior but does not reach the limma significance threshold after
+multiple testing correction.
+
+```{r pip_vs_pvalue, fig.cap = "BQMA PIP versus limma p-value. Purple filled points are truly associated probes."}
+plot_df <- data.frame(
+  pip      = pip,
+  neg_logp = -log10(limma_res[names(pip), "P.Value"]),
+  is_true  = names(pip) %in% true_probes
+)
+
+plot(plot_df$neg_logp, plot_df$pip,
+     col  = ifelse(plot_df$is_true, "purple", "grey60"),
+     pch  = ifelse(plot_df$is_true, 19, 1),
+     xlab = "-log10(p-value, limma)",
+     ylab = "PIP (BQMA)",
+     main = "BQMA PIP versus limma p-value",
+     ylim = c(0, 1))
+abline(h = 0.5,           lty = 2, col = "red",  lwd = 2)
+abline(v = -log10(0.05),  lty = 2, col = "blue", lwd = 2)
+legend("topleft",
+       legend = c("Signal probe", "Null probe",
+                  "PIP = 0.5", "p = 0.05"),
+       col    = c("purple", "grey60", "red", "blue"),
+       pch    = c(19, 1, NA, NA),
+       lty    = c(NA, NA, 2, 2),
+       bty    = "n")
+```
+
+## Annotating probes with QC flags
+
+A high PIP is necessary but not sufficient for a reliable hit. Illumina
+450k and EPIC arrays carry probes with known reliability issues:
+
+- **SNPs at the CpG site (distance 0–2 bp)** — apparent methylation
+  differences may reflect genotype rather than epigenetic state.
+- **SNPs in the probe body (distance > 2 bp)** — can perturb
+  hybridisation more subtly.
+- **Cross-reactive probes** (Chen 2013 for 450k, McCartney 2016 for
+  EPIC) — hybridise to multiple genomic locations and cannot be
+  uniquely attributed.
+- **Probes on chrX and chrY** — confound with sex unless explicitly
+  modelled.
+
+Because we used real probe identifiers from the 450k manifest in our
+simulation, `annotate_results()` can look up each probe in the
+annotation database and return its QC status.
+
+`annotate_results()` returns a tidy data.frame combining the posterior
+summaries with QC flags and genomic context (gene, feature, chr, pos).
+Each probe is classified hierarchically:
+
+- `CLEAN_CpG` — interpretable as epigenetic signal
+- `FLAGGED_snp_body` — SNP in probe body (dist > 2 bp)
+- `PROBLEMATIC` — SNP at CpG (dist ≤ 2 bp), cross-reactive, or on
+  chrX / chrY
+
+The individual underlying flags (`snp_dist_bp`, `cr_flag`, `xy_flag`)
+are also returned so you can apply your own rule.
+
+```{r annotate}
+ann_df <- annotate_results(fit, array = "450k")
+
+# One row per probe (single quantile for binary family)
+nrow(ann_df)
+head(ann_df[, c("probe", "pip", "beta_mean",
+                "probe_class", "snp_dist_bp", "cr_flag", "xy_flag",
+                "gene", "chr")])
+
+# Class breakdown across all probes tested
+table(ann_df$probe_class)
+```
+
+The exact mix depends on which 200 most-variable probes ended up in our
+subset, but you should see a non-trivial number of `PROBLEMATIC` and
+`FLAGGED_snp_body` probes alongside the `CLEAN_CpG` majority.
+
+### Filtering top hits to reliable probes
+
+The recommended workflow is: rank by PIP, then keep only probes
+classified as `CLEAN_CpG` (or accept `FLAGGED_snp_body` if you want
+broader coverage and report the flag).
+
+```{r filter_clean}
+ann_top <- ann_df[order(-ann_df$pip), ]
+ann_top <- ann_top[ann_top$pip >= 0.5, ]
+
+cat("Probes with PIP >= 0.5 :", nrow(ann_top), "\n")
+cat("  CLEAN_CpG          :", sum(ann_top$probe_class == "CLEAN_CpG"),        "\n")
+cat("  FLAGGED_snp_body   :", sum(ann_top$probe_class == "FLAGGED_snp_body"), "\n")
+cat("  PROBLEMATIC        :", sum(ann_top$probe_class == "PROBLEMATIC"),      "\n")
+
+# Reliable hits only
+reliable <- ann_top[ann_top$probe_class == "CLEAN_CpG",
+                    c("probe", "pip", "beta_mean", "ci_low", "ci_high",
+                      "gene", "feature", "chr", "pos")]
+print(reliable)
+```
+
+### Attaching the classification onto the fit
+
+If you want the classification to travel with the `BQMAResult` object
+(so that `show(fit)` prints the QC summary, and downstream functions
+can read `@probe_class`), use `add_annotation()`. It is a thin writer
+that runs `annotate_results()` internally and copies the per-probe
+classification onto the slot.
+
+```{r add_annotation}
+fit <- add_annotation(fit, array = "450k")
+show(fit)
+```
+
+The bottom line of `show(fit)` now reports the QC breakdown.
+
+## Interpreting the results
+
+The key outputs for downstream analysis are:
+
+- `pip` values above 0.5 indicate probable association. Use 0.8 for
+  a more stringent threshold analogous to genome-wide significance.
+- `beta` values give the direction and magnitude of the association
+  on the standardised M-value scale.
+- `ci` values give the 95 % credible interval. A CI excluding zero is
+  consistent with a non-null effect, but PIP is the primary evidence
+  measure.
+- `probe_class` from `annotate_results()` (or `@probe_class` after
+  `add_annotation()`) flags reliability. Final reportable hits should
+  generally restrict to `CLEAN_CpG`.
+
+```{r final_summary}
+final <- ann_df[ann_df$pip >= 0.5 &
+                ann_df$probe_class == "CLEAN_CpG", ]
+final <- final[order(-final$pip), ]
+
+final$direction <- ifelse(final$beta_mean > 0,
+                          "hypermethylated", "hypomethylated")
+
+print(final[, c("probe", "pip", "beta_mean", "ci_low", "ci_high",
+                "gene", "feature", "chr", "direction")])
+```
+
+## References
+
+- Albert JH, Chib S (1993). Bayesian analysis of binary and
+  polychotomous response data. *JASA* 88(422), 669–679.
+- George EI, McCulloch RE (1993). Variable selection via Gibbs
+  sampling. *JASA* 88(423), 881–889.
+- Kozumi H, Kobayashi G (2011). Gibbs sampling methods for Bayesian
+  quantile regression. *J. Stat. Comput. Simul.* 81(11), 1565–1578.
+- Chen YA et al. (2013). Discovery of cross-reactive probes and
+  polymorphic CpGs in the Illumina Infinium HumanMethylation450
+  microarray. *Epigenetics* 8(2), 203–209.
+- McCartney DL et al. (2016). Identification of polymorphic and
+  off-target probe binding sites on the Illumina Infinium
+  MethylationEPIC BeadChip. *Genomics Data* 9, 22–24.
+- Hansen KD, Aryee M (2024). minfiData: Example data for the Illumina
+  Methylation 450k array. R package.

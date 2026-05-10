@@ -5,12 +5,10 @@
 \alias{getBeta,BQMAResult-method}
 \title{Extract posterior mean beta coefficients}
 \usage{
-getBeta(x, tau = NULL, filter = NULL)
-
-\S4method{getBeta}{BQMAResult}(x, tau = NULL, filter = NULL)
+\S4method{getBeta}{BQMAResult}(object, tau = NULL, filter = NULL)
 }
 \arguments{
-\item{x}{A \code{BQMAResult} object.}
+\item{object}{A \code{BQMAResult} object.}
 
 \item{tau}{Numeric. A single quantile value. NULL returns all.}
 
@@ -21,10 +19,6 @@ NULL returns all probes.}
 A matrix of posterior means (CpGs x tau).
 }
 \description{
-Extract posterior mean beta coefficients
+Method for \code{BQMAResult} of the \code{getBeta} generic imported
+from \pkg{minfi}.
 }
-\section{Methods (by class)}{
-\itemize{
-\item \code{getBeta(BQMAResult)}: Method for BQMAResult
-
-}}

@@ -15,6 +15,8 @@ NULL
 #' @slot probe_class Named character vector of probe annotations. Empty if
 #'   \code{annotate_results()} has not been called.
 #'
+#' @name BQMAResult-class
+#' @aliases BQMAResult
 #' @exportClass BQMAResult
 setClass("BQMAResult",
          representation(
@@ -25,7 +27,7 @@ setClass("BQMAResult",
            n_iter      = "integer",
            burnin      = "integer",
            call        = "call",
-           probe_class = "character"   # named vector; character(0) = not yet annotated
+           probe_class = "character"
          ),
          prototype(
            probe_class = character(0)

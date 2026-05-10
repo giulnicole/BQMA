@@ -23,6 +23,8 @@ Suggests:
     DMRcatedata,
     IlluminaHumanMethylation450kanno.ilmn12.hg19,
     IlluminaHumanMethylationEPICanno.ilm10b4.hg19,
-    minfi
+    minfiData,
+    matrixStats,
+    limma
 Config/testthat/edition: 3
 VignetteBuilder: knitr
