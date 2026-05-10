@@ -46,8 +46,8 @@ benchmark.
 
 ## Loading real probe identifiers
 
-We load the `MsetEx` dataset from `minfiData` — a 6-sample 450k example
-shipped with Bioconductor — purely to obtain a realistic set of probe
+We load the `MsetEx` dataset from `minfiData`, a 6-sample 450k example
+shipped with Bioconductor, purely to obtain a realistic set of probe
 IDs and to subset to the most variable probes. The actual model fit
 will use a simulated design matrix on top of these identifiers; we are
 *not* analysing the `MsetEx` samples themselves, since 6 samples are
@@ -384,6 +384,10 @@ final$direction <- ifelse(final$beta_mean > 0,
 print(final[, c("probe", "pip", "beta_mean", "ci_low", "ci_high",
                 "gene", "feature", "chr", "direction")])
 ```
+
+
+
+
 
 ## References
 

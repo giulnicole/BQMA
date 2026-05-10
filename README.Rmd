@@ -2,8 +2,6 @@
 output: github_document
 ---
 
-## Bayesian Quantile Methylation Analysis
-
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
@@ -13,26 +11,31 @@ knitr::opts_chunk$set(
 )
 ```
 
+# BQMA: Bayesian Quantile Methylation Analysis
 
-
-## Overview
-
-BQMA (Bayesian Quantile Methylation Analysis) implements Bayesian sparse regression for Illumina methylation arrays. It provides posterior inclusion probabilities (PIP) for each CpG probe, quantile-specific effect profiles for continuous phenotypes, and a probit model for binary phenotypes. The spike-slab prior performs variable selection directly, returning a probability of association rather than a p-value.
-This vignette demonstrates the full workflow on simulated data that mimics a real methylation array experiment, then shows how to compare results with limma.
+BQMA implements Bayesian sparse regression for Illumina methylation
+arrays (450k / EPIC). It returns posterior inclusion probabilities
+(PIP) per CpG probe, with a probit spike-slab model for binary
+phenotypes (Albert & Chib 1993; George & McCulloch 1993) and an
+Asymmetric Laplace quantile regression model for continuous
+phenotypes (Kozumi & Kobayashi 2011). It also annotates probes with
+QC flags (SNP at CpG, cross-reactive, sex chromosome) drawn from the
+Illumina manifest and the Chen / McCartney probe lists.
 
 ## Installation
 
 ```{r install, eval = FALSE}
-#if (!requireNamespace("BiocManager", quietly = TRUE))
-#  install.packages("BiocManager")
-#BiocManager::install("BQMA")
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# BiocManager::install("BQMA")
 ```
 
-## Simulating methylation data
+## Quick start
 
-We simulate a dataset with 200 samples and 100 CpG probes. Ten probes are truly associated with a binary phenotype (case/control). The remaining 90 probes are null. This setup mimics a small methylation array experiment and allows us to evaluate method performance against known ground truth.
+A minimal end-to-end example: simulate a binary EWAS, fit BQMA, extract
+PIPs, then annotate the result.
 
-```{r simulate}
+```{r quickstart, message = FALSE, warning = FALSE}
 library(BQMA)
 
 set.seed(42)
@@ -42,78 +45,91 @@ p <- 100
 X <- matrix(rnorm(n * p), nrow = n, ncol = p)
 colnames(X) <- paste0("cg", seq_len(p))
 
-# Ten truly associated probes with moderate effects
-beta_true            <- rep(0, p)
-beta_true[1:5]       <- c(0.8, -0.8, 0.6, -0.6, 0.7)
-beta_true[6:10]      <- c(-0.7, 0.5, -0.5, 0.6, -0.6)
+# 10 truly associated probes
+beta_true       <- rep(0, p)
+beta_true[1:5]  <- c( 0.8, -0.8,  0.6, -0.6,  0.7)
+beta_true[6:10] <- c(-0.7,  0.5, -0.5,  0.6, -0.6)
 
-# Binary phenotype generated from a probit model
-eta <- X %*% beta_true
-y   <- rbinom(n, 1, pnorm(eta))
+# Binary phenotype from a probit model
+y <- rbinom(n, 1, pnorm(X %*% beta_true))
 
-cat("Cases    :", sum(y == 1), "\n")
-cat("Controls :", sum(y == 0), "\n")
-cat("Signal probes  :", sum(beta_true != 0), "\n")
-cat("Null probes    :", sum(beta_true == 0), "\n")
-```
-
-The correlation between the true signal probes and the phenotype confirms that the simulated signal is detectable but moderate, as expected in real EWAS data.
-
-```{r check_signal}
-cor_true  <- mean(abs(cor(X[, 1:10],  y)))
-cor_false <- mean(abs(cor(X[, 11:100], y)))
-
-cat("Mean correlation - signal probes:", round(cor_true,  3), "\n")
-cat("Mean correlation - null probes  :", round(cor_false, 3), "\n")
-```
-
-## Fitting BQMA for a binary phenotype
-
-The main function is `BQMA()`. For a binary phenotype coded as 0/1 we use `family = "binary"`, which fits a Bayesian probit model with a spike-slab prior using Albert and Chib (1993) data augmentation and the George and McCulloch (1993) marginal Bayes factor for variable selection.
-
-The `expected_incl` argument sets the prior probability that any given probe is associated with the phenotype. The default of 0.05 encodes the expectation that roughly 5 percent of tested probes are truly associated, which is a reasonable assumption for most EWAS.
-
-```{r fit_bqma, cache = TRUE}
-fit <- BQMA(
-  X             = X,
-  y             = y,
-  family        = "binary",
-  n_iter        = 3000L,
-  burnin        = 1000L,
-  expected_incl = 0.05,
-  verbose       = FALSE
-)
+fit <- BQMA(X, y,
+            family        = "binary",
+            n_iter        = 3000L,
+            burnin        = 1000L,
+            expected_incl = 0.05,
+            verbose       = FALSE)
 
 show(fit)
 ```
 
 ## Extracting results
 
-The main output is the posterior inclusion probability (PIP) for each probe. A PIP close to 1 means the data strongly support inclusion of that probe in the model. A PIP close to 0 means the probe is likely null. We use a threshold of 0.5 as a default decision boundary.
-
-```{r extract, warning=F, message=FALSE}
-library(minfi)
+```{r extract}
 pip  <- getPIP(fit)[, 1]
-beta <- BQMA::getBeta(fit)[, 1]
-ci   <- getCI(fit)
+beta <- BQMA::getBeta(fit)[, 1]   # qualified to avoid conflict with minfi::getBeta
+ci   <- getCI(fit)[, 1, ]         # CpGs x 2, first tau
 
 cat("Probes with PIP > 0.5:", sum(pip > 0.5), "\n")
 cat("Probes with PIP > 0.8:", sum(pip > 0.8), "\n")
 
-# Top 10 probes ordered by PIP
 top10 <- order(pip, decreasing = TRUE)[1:10]
-# estrai CI correttamente dall'array 3D
-ci_mat <- getCI(fit)[, 1, ]   # CpGs x 2 -- prendi il primo tau
 
-results <- data.frame(
+data.frame(
   probe   = names(pip)[top10],
-  pip     = round(pip[top10], 3),
-  beta    = round(beta[top10], 3),
-  ci_low  = round(ci_mat[top10, 1], 3),
-  ci_high = round(ci_mat[top10, 2], 3),
+  pip     = round(pip[top10],     3),
+  beta    = round(beta[top10],    3),
+  ci_low  = round(ci[top10, 1],   3),
+  ci_high = round(ci[top10, 2],   3),
   is_true = names(pip)[top10] %in% paste0("cg", 1:10)
 )
-
-print(results)
-
 ```
+
+## Annotating probes with QC flags
+
+`annotate_results()` returns a tidy `data.frame` with the posterior
+summaries plus per-probe QC classification (`CLEAN_CpG`,
+`FLAGGED_snp_body`, `PROBLEMATIC`) and genomic context (gene, chr, pos).
+Use real Illumina probe IDs (cgXXXXXXXX from the 450k or EPIC manifest)
+for the annotation lookup to return non-NA flags.
+
+```{r}
+ann_df <- annotate_results(fit, array = "450k")
+table(ann_df$probe_class)
+
+# Filter to reliable hits
+reliable <- ann_df[ann_df$pip >= 0.5 &
+                   ann_df$probe_class == "CLEAN_CpG", ]
+```
+
+To attach the classification onto the `BQMAResult` object (so that
+`show(fit)` prints the QC summary), use `add_annotation()`:
+
+```{r}
+fit <- add_annotation(fit, array = "450k")
+show(fit)
+```
+
+## Documentation
+
+See the package vignette for the full workflow on real probe IDs from
+`minfiData`, plus a comparison against limma:
+
+```{r}
+#vignette("How-to-use-BMQA_new", package = "BQMA")
+```
+
+## References
+
+- Albert JH, Chib S (1993). Bayesian analysis of binary and
+  polychotomous response data. *JASA* 88(422), 669–679.
+- George EI, McCulloch RE (1993). Variable selection via Gibbs
+  sampling. *JASA* 88(423), 881–889.
+- Kozumi H, Kobayashi G (2011). Gibbs sampling methods for Bayesian
+  quantile regression. *J. Stat. Comput. Simul.* 81(11), 1565–1578.
+- Chen YA et al. (2013). Discovery of cross-reactive probes and
+  polymorphic CpGs in the Illumina HumanMethylation450 microarray.
+  *Epigenetics* 8(2), 203–209.
+- McCartney DL et al. (2016). Identification of polymorphic and
+  off-target probe binding sites on the Illumina MethylationEPIC
+  BeadChip. *Genomics Data* 9, 22–24.
